@@ -22,7 +22,7 @@ private:
 	cl::Program m_Program;
 	
 public:
-	CLProgram(cl::Device device, cl::Context context, const std::string& fileName) {
+	CLProgram(cl::Context context, const std::string& fileName) {
 		// Read the kernel codes
 		std::ifstream fileStream(fileName);
 		std::string src(std::istreambuf_iterator<char>(fileStream), (std::istreambuf_iterator<char>()));
@@ -118,10 +118,10 @@ int main() {
 	unsigned imgSize = width * height;
 	
 	// Create Programs
-	CLProgram scaleProg(device, context, "ScaleAndGray.cl");
-	CLProgram znccProg(device, context, "Zncc.cl");
-	CLProgram crossCheckProg(device, context, "CrossCheck.cl");
-	CLProgram ocFillProg(device, context, "OcclusionFill.cl");
+	CLProgram scaleProg(context, "ScaleAndGray.cl");
+	CLProgram znccProg(context, "Zncc.cl");
+	CLProgram crossCheckProg(context, "CrossCheck.cl");
+	CLProgram ocFillProg(context, "OcclusionFill.cl");
 	
 	// Array to copy output back into
 	std::vector<unsigned> output(imgSize);
@@ -205,10 +205,11 @@ int main() {
 	cl::Event ocFillEvent;
 
 	// Enqueue Tasks
+	cl::CommandQueue queue(context, device, CL_QUEUE_PROFILING_ENABLE);
+
 	// Scale and gray left
 	std::cout << "Converting Left Image to grayscale...";
-	cl::CommandQueue scaleQueue(context, device, CL_QUEUE_PROFILING_ENABLE);
-	CLCall(scaleQueue.enqueueNDRangeKernel(scaleLKernel, cl::NullRange, 
+	CLCall(queue.enqueueNDRangeKernel(scaleLKernel, cl::NullRange, 
 		cl::NDRange(height, width), cl::NullRange, nullptr, &scaleLEvent));
 	scaleLEvent.wait();
 	elapsed = scaleLEvent.getProfilingInfo<CL_PROFILING_COMMAND_END>() -
@@ -217,7 +218,7 @@ int main() {
 
 	// Scale and gray right
 	std::cout << "Converting Right Image to grayscale...";
-	CLCall(scaleQueue.enqueueNDRangeKernel(scaleRKernel, cl::NullRange, 
+	CLCall(queue.enqueueNDRangeKernel(scaleRKernel, cl::NullRange, 
 		cl::NDRange(height, width), cl::NullRange, nullptr, &scaleREvent));
 	scaleREvent.wait();
 	elapsed = scaleREvent.getProfilingInfo<CL_PROFILING_COMMAND_END>() -
@@ -226,8 +227,7 @@ int main() {
 
 	// Disparity LR
 	std::cout << "Calculating Left Disparity Map...";
-	cl::CommandQueue znccQueue(context, device, CL_QUEUE_PROFILING_ENABLE);
-	CLCall(znccQueue.enqueueNDRangeKernel(dispLRKernel, cl::NullRange,
+	CLCall(queue.enqueueNDRangeKernel(dispLRKernel, cl::NullRange,
 		cl::NDRange(height, width), cl::NullRange, nullptr, &dispLREvent));
 	dispLREvent.wait();
 	elapsed = dispLREvent.getProfilingInfo<CL_PROFILING_COMMAND_END>() -
@@ -236,7 +236,7 @@ int main() {
 
 	// Disparity RL
 	std::cout << "Calculating Right Disparity Map...";
-	CLCall(znccQueue.enqueueNDRangeKernel(dispRLKernel, cl::NullRange,
+	CLCall(queue.enqueueNDRangeKernel(dispRLKernel, cl::NullRange,
 		cl::NDRange(height, width), cl::NullRange, nullptr, &dispRLEvent));
 	dispRLEvent.wait();
 	elapsed = dispRLEvent.getProfilingInfo<CL_PROFILING_COMMAND_END>() -
@@ -245,8 +245,7 @@ int main() {
 
 	// Cross Checking
 	std::cout << "Performing Cross Checking...";
-	cl::CommandQueue crossCheckQueue(context, device, CL_QUEUE_PROFILING_ENABLE);
-	CLCall(crossCheckQueue.enqueueNDRangeKernel(dispCCKernel, cl::NullRange, 
+	CLCall(queue.enqueueNDRangeKernel(dispCCKernel, cl::NullRange, 
 		cl::NDRange(height * width), cl::NullRange, nullptr, &dispCCEvent));
 	dispCCEvent.wait();
 	elapsed = dispCCEvent.getProfilingInfo<CL_PROFILING_COMMAND_END>() -
@@ -255,8 +254,7 @@ int main() {
 
 	// Occlusion Filling
 	std::cout << "Performing Occlusion Filling...";
-	cl::CommandQueue ocFillQueue(context, device, CL_QUEUE_PROFILING_ENABLE);
-	CLCall(ocFillQueue.enqueueNDRangeKernel(ocFillKernel, cl::NullRange,
+	CLCall(queue.enqueueNDRangeKernel(ocFillKernel, cl::NullRange,
 		cl::NDRange(height, width), cl::NullRange, nullptr, &ocFillEvent));
 	ocFillEvent.wait();
 	elapsed = ocFillEvent.getProfilingInfo<CL_PROFILING_COMMAND_END>() -
