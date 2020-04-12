@@ -15,6 +15,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "StereoVisionCpp", "StereoVi
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "StereoVisionParallelCpp", "StereoVisionParallelCpp\StereoVisionParallelCpp.vcxproj", "{518C5A9F-25A3-4049-9B47-92D62B94482D}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "StereoVisionCL", "StereoVisionCL\StereoVisionCL.vcxproj", "{58490821-CE68-4D43-B151-5C4283D24A09}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -71,6 +73,14 @@ Global
 		{518C5A9F-25A3-4049-9B47-92D62B94482D}.Release|x64.Build.0 = Release|x64
 		{518C5A9F-25A3-4049-9B47-92D62B94482D}.Release|x86.ActiveCfg = Release|Win32
 		{518C5A9F-25A3-4049-9B47-92D62B94482D}.Release|x86.Build.0 = Release|Win32
+		{58490821-CE68-4D43-B151-5C4283D24A09}.Debug|x64.ActiveCfg = Debug|x64
+		{58490821-CE68-4D43-B151-5C4283D24A09}.Debug|x64.Build.0 = Debug|x64
+		{58490821-CE68-4D43-B151-5C4283D24A09}.Debug|x86.ActiveCfg = Debug|Win32
+		{58490821-CE68-4D43-B151-5C4283D24A09}.Debug|x86.Build.0 = Debug|Win32
+		{58490821-CE68-4D43-B151-5C4283D24A09}.Release|x64.ActiveCfg = Release|x64
+		{58490821-CE68-4D43-B151-5C4283D24A09}.Release|x64.Build.0 = Release|x64
+		{58490821-CE68-4D43-B151-5C4283D24A09}.Release|x86.ActiveCfg = Release|Win32
+		{58490821-CE68-4D43-B151-5C4283D24A09}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
