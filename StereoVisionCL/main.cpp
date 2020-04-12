@@ -19,11 +19,10 @@ Class to handle multiple opencl kernel files
 */
 class CLProgram {
 private:
-	cl::Context m_Context;
 	cl::Program m_Program;
 	
 public:
-	CLProgram(cl::Device device, const std::string& fileName) {
+	CLProgram(cl::Device device, cl::Context context, const std::string& fileName) {
 		// Read the kernel codes
 		std::ifstream fileStream(fileName);
 		std::string src(std::istreambuf_iterator<char>(fileStream), (std::istreambuf_iterator<char>()));
@@ -31,13 +30,11 @@ public:
 		// Load the kernel code
 		cl::Program::Sources sources(1, std::make_pair(src.c_str(), src.length() + 1));
 
-		m_Context = cl::Context(device);
-		m_Program = cl::Program(m_Context, sources);
+		m_Program = cl::Program(context, sources);
 
 		CLCall(m_Program.build("-cl-std=CL1.2"));
 	}
 
-	inline cl::Context GetContext() { return m_Context; }
 	inline cl::Program GetProgram() { return m_Program; }
 };
 
@@ -111,6 +108,7 @@ int main() {
 	platform.getDevices(CL_DEVICE_TYPE_GPU, &devices);
 
 	cl::Device device = devices.front();
+	cl::Context context(device);
 
 	std::cout << "Device: " << device.getInfo<CL_DEVICE_VENDOR>() << std::endl;
 	std::cout << "OpenCL Version: " << device.getInfo<CL_DEVICE_VERSION>() << std::endl;
@@ -120,30 +118,30 @@ int main() {
 	unsigned imgSize = width * height;
 	
 	// Create Programs
-	CLProgram scaleProg(device, "ScaleAndGray.cl");
-	CLProgram znccProg(device, "Zncc.cl");
-	CLProgram crossCheckProg(device, "CrossCheck.cl");
-	CLProgram ocFillProg(device, "OcclusionFill.cl");
+	CLProgram scaleProg(device, context, "ScaleAndGray.cl");
+	CLProgram znccProg(device, context, "Zncc.cl");
+	CLProgram crossCheckProg(device, context, "CrossCheck.cl");
+	CLProgram ocFillProg(device, context, "OcclusionFill.cl");
 	
 	// Array to copy output back into
 	std::vector<unsigned> output(imgSize);
 
 	// Create buffers
-	cl::Buffer lBuff(scaleProg.GetContext(), CL_MEM_READ_ONLY | CL_MEM_HOST_NO_ACCESS | CL_MEM_COPY_HOST_PTR, 
+	cl::Buffer lBuff(context, CL_MEM_READ_ONLY | CL_MEM_HOST_NO_ACCESS | CL_MEM_COPY_HOST_PTR, 
 		sizeof(leftPixels[0]) * leftPixels.size(), leftPixels.data());
-	cl::Buffer rBuff(scaleProg.GetContext(), CL_MEM_READ_ONLY | CL_MEM_HOST_NO_ACCESS | CL_MEM_COPY_HOST_PTR,
+	cl::Buffer rBuff(context, CL_MEM_READ_ONLY | CL_MEM_HOST_NO_ACCESS | CL_MEM_COPY_HOST_PTR,
 		sizeof(rightPixels[0]) * rightPixels.size(), rightPixels.data());
-	cl::Buffer grayLBuff(scaleProg.GetContext(), CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS | CL_MEM_COPY_HOST_PTR,
+	cl::Buffer grayLBuff(context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS | CL_MEM_COPY_HOST_PTR,
 		sizeof(output[0]) * imgSize, output.data());
-	cl::Buffer grayRBuff(scaleProg.GetContext(), CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS | CL_MEM_COPY_HOST_PTR,
+	cl::Buffer grayRBuff(context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS | CL_MEM_COPY_HOST_PTR,
 		sizeof(output[0]) * imgSize, output.data());
-	cl::Buffer dispLRBuff(scaleProg.GetContext(), CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS | CL_MEM_COPY_HOST_PTR,
+	cl::Buffer dispLRBuff(context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS | CL_MEM_COPY_HOST_PTR,
 		sizeof(output[0]) * imgSize, output.data());
-	cl::Buffer dispRLBuff(scaleProg.GetContext(), CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS | CL_MEM_COPY_HOST_PTR,
+	cl::Buffer dispRLBuff(context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS | CL_MEM_COPY_HOST_PTR,
 		sizeof(output[0]) * imgSize, output.data());
-	cl::Buffer dispCCBuff(scaleProg.GetContext(), CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS | CL_MEM_COPY_HOST_PTR,
+	cl::Buffer dispCCBuff(context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS | CL_MEM_COPY_HOST_PTR,
 		sizeof(output[0]) * imgSize, output.data());
-	cl::Buffer outputBuff(scaleProg.GetContext(), CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+	cl::Buffer outputBuff(context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY | CL_MEM_COPY_HOST_PTR,
 		sizeof(output[0]) * imgSize, output.data());
 
 	// Create Kernels
@@ -209,7 +207,7 @@ int main() {
 	// Enqueue Tasks
 	// Scale and gray left
 	std::cout << "Converting Left Image to grayscale...";
-	cl::CommandQueue scaleQueue(scaleProg.GetContext(), device, CL_QUEUE_PROFILING_ENABLE);
+	cl::CommandQueue scaleQueue(context, device, CL_QUEUE_PROFILING_ENABLE);
 	CLCall(scaleQueue.enqueueNDRangeKernel(scaleLKernel, cl::NullRange, 
 		cl::NDRange(height, width), cl::NullRange, nullptr, &scaleLEvent));
 	scaleLEvent.wait();
@@ -228,7 +226,7 @@ int main() {
 
 	// Disparity LR
 	std::cout << "Calculating Left Disparity Map...";
-	cl::CommandQueue znccQueue(znccProg.GetContext(), device, CL_QUEUE_PROFILING_ENABLE);
+	cl::CommandQueue znccQueue(context, device, CL_QUEUE_PROFILING_ENABLE);
 	CLCall(znccQueue.enqueueNDRangeKernel(dispLRKernel, cl::NullRange,
 		cl::NDRange(height, width), cl::NullRange, nullptr, &dispLREvent));
 	dispLREvent.wait();
@@ -247,7 +245,7 @@ int main() {
 
 	// Cross Checking
 	std::cout << "Performing Cross Checking...";
-	cl::CommandQueue crossCheckQueue(crossCheckProg.GetContext(), device, CL_QUEUE_PROFILING_ENABLE);
+	cl::CommandQueue crossCheckQueue(context, device, CL_QUEUE_PROFILING_ENABLE);
 	CLCall(crossCheckQueue.enqueueNDRangeKernel(dispCCKernel, cl::NullRange, 
 		cl::NDRange(height * width), cl::NullRange, nullptr, &dispCCEvent));
 	dispCCEvent.wait();
@@ -257,7 +255,7 @@ int main() {
 
 	// Occlusion Filling
 	std::cout << "Performing Occlusion Filling...";
-	cl::CommandQueue ocFillQueue(ocFillProg.GetContext(), device, CL_QUEUE_PROFILING_ENABLE);
+	cl::CommandQueue ocFillQueue(context, device, CL_QUEUE_PROFILING_ENABLE);
 	CLCall(ocFillQueue.enqueueNDRangeKernel(ocFillKernel, cl::NullRange,
 		cl::NDRange(height, width), cl::NullRange, nullptr, &ocFillEvent));
 	ocFillEvent.wait();
