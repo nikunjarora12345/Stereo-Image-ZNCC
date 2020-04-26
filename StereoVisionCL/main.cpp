@@ -22,7 +22,7 @@ private:
 	cl::Program m_Program;
 	
 public:
-	CLProgram(cl::Context context, const std::string& fileName) {
+	CLProgram(cl::Context context, cl::Device device, const std::string& fileName) {
 		// Read the kernel codes
 		std::ifstream fileStream(fileName);
 		std::string src(std::istreambuf_iterator<char>(fileStream), (std::istreambuf_iterator<char>()));
@@ -33,6 +33,12 @@ public:
 		m_Program = cl::Program(context, sources);
 
 		CLCall(m_Program.build("-cl-std=CL1.2"));
+
+		cl_build_status status = m_Program.getBuildInfo<CL_PROGRAM_BUILD_STATUS>(device);
+		if (status == CL_BUILD_ERROR) {
+			std::string log = m_Program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device);
+			std::cerr << log << std::endl;
+		}
 	}
 
 	inline cl::Program GetProgram() { return m_Program; }
@@ -86,18 +92,6 @@ std::vector<unsigned char> normalize(std::vector<unsigned>, const unsigned, cons
 int main() {
 	Timer timer;
 
-	std::vector<unsigned char> leftPixels, rightPixels;
-	unsigned width, height, rightWidth, rightHeight;
-
-	std::cout << "Reading Left Image...";
-	leftPixels = loadImage("imageL.png", width, height);
-
-	std::cout << "Reading Right Image...";
-	rightPixels = loadImage("imageR.png", rightWidth, rightHeight);
-
-	// left and right images are assumed to be of same dimensions
-	assert(width == rightWidth && height == rightHeight);
-
 	// Get the list of platforms available
 	std::vector<cl::Platform> platforms;
 	cl::Platform::get(&platforms);
@@ -110,18 +104,36 @@ int main() {
 	cl::Device device = devices.front();
 	cl::Context context(device);
 
+	// Get the maximum number of work items per work group supported by the GPU
+	unsigned maxWorkGroupSize = device.getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>();
+
 	std::cout << "Device: " << device.getInfo<CL_DEVICE_VENDOR>() << std::endl;
 	std::cout << "OpenCL Version: " << device.getInfo<CL_DEVICE_VERSION>() << std::endl;
+	std::cout << "Max Workgroup Size: " << maxWorkGroupSize << std::endl;
+	std::cout << "Max Local Memory Size: " << device.getInfo<CL_DEVICE_LOCAL_MEM_SIZE>() << std::endl;
+	std::cout << std::endl;
+
+	std::vector<unsigned char> leftPixels, rightPixels;
+	unsigned width, height, rightWidth, rightHeight;
+
+	std::cout << "Reading Left Image...";
+	leftPixels = loadImage("imageL.png", width, height);
+
+	std::cout << "Reading Right Image...";
+	rightPixels = loadImage("imageR.png", rightWidth, rightHeight);
+
+	// left and right images are assumed to be of same dimensions
+	assert(width == rightWidth && height == rightHeight);
 
 	width /= scaleFactor;
 	height /= scaleFactor;
 	unsigned imgSize = width * height;
 	
 	// Create Programs
-	CLProgram scaleProg(context, "ScaleAndGray.cl");
-	CLProgram znccProg(context, "Zncc.cl");
-	CLProgram crossCheckProg(context, "CrossCheck.cl");
-	CLProgram ocFillProg(context, "OcclusionFill.cl");
+	CLProgram scaleProg(context, device, "ScaleAndGray.cl");
+	CLProgram znccProg(context, device, "Zncc.cl");
+	CLProgram crossCheckProg(context, device, "CrossCheck.cl");
+	CLProgram ocFillProg(context, device, "OcclusionFill.cl");
 	
 	// Array to copy output back into
 	std::vector<unsigned> output(imgSize);
@@ -145,41 +157,26 @@ int main() {
 		sizeof(output[0]) * imgSize, output.data());
 
 	// Create Kernels
-	cl::Kernel scaleLKernel(scaleProg.GetProgram(), "ScaleAndGray");
-	CLCall(scaleLKernel.setArg(0, lBuff));
-	CLCall(scaleLKernel.setArg(1, grayLBuff));
-	CLCall(scaleLKernel.setArg(2, width * scaleFactor));
-	CLCall(scaleLKernel.setArg(3, height * scaleFactor));
-	CLCall(scaleLKernel.setArg(4, scaleFactor));
+	cl::Kernel scaleKernel(scaleProg.GetProgram(), "ScaleAndGray");
+	CLCall(scaleKernel.setArg(0, lBuff));
+	CLCall(scaleKernel.setArg(1, rBuff));
+	CLCall(scaleKernel.setArg(2, grayLBuff));
+	CLCall(scaleKernel.setArg(3, grayRBuff));
+	CLCall(scaleKernel.setArg(4, width * scaleFactor));
+	CLCall(scaleKernel.setArg(5, height * scaleFactor));
+	CLCall(scaleKernel.setArg(6, scaleFactor));
 
-	cl::Kernel scaleRKernel(scaleProg.GetProgram(), "ScaleAndGray");
-	CLCall(scaleRKernel.setArg(0, rBuff));
-	CLCall(scaleRKernel.setArg(1, grayRBuff));
-	CLCall(scaleRKernel.setArg(2, width * scaleFactor));
-	CLCall(scaleRKernel.setArg(3, height * scaleFactor));
-	CLCall(scaleRKernel.setArg(4, scaleFactor));
-
-	cl::Kernel dispLRKernel(znccProg.GetProgram(), "Zncc");
-	CLCall(dispLRKernel.setArg(0, grayLBuff));
-	CLCall(dispLRKernel.setArg(1, grayRBuff));
-	CLCall(dispLRKernel.setArg(2, dispLRBuff));
-	CLCall(dispLRKernel.setArg(3, width));
-	CLCall(dispLRKernel.setArg(4, height));
-	CLCall(dispLRKernel.setArg(5, 0));
-	CLCall(dispLRKernel.setArg(6, maxDisparity));
-	CLCall(dispLRKernel.setArg(7, windowWidth));
-	CLCall(dispLRKernel.setArg(8, windowHeight));
-
-	cl::Kernel dispRLKernel(znccProg.GetProgram(), "Zncc");
-	CLCall(dispRLKernel.setArg(0, grayRBuff));
-	CLCall(dispRLKernel.setArg(1, grayLBuff));
-	CLCall(dispRLKernel.setArg(2, dispRLBuff));
-	CLCall(dispRLKernel.setArg(3, width));
-	CLCall(dispRLKernel.setArg(4, height));
-	CLCall(dispRLKernel.setArg(5, -maxDisparity));
-	CLCall(dispRLKernel.setArg(6, 0));
-	CLCall(dispRLKernel.setArg(7, windowWidth));
-	CLCall(dispRLKernel.setArg(8, windowHeight));
+	cl::Kernel dispKernel(znccProg.GetProgram(), "Zncc");
+	CLCall(dispKernel.setArg(0, grayLBuff));
+	CLCall(dispKernel.setArg(1, grayRBuff));
+	CLCall(dispKernel.setArg(2, dispLRBuff));
+	CLCall(dispKernel.setArg(3, dispRLBuff));
+	CLCall(dispKernel.setArg(4, width));
+	CLCall(dispKernel.setArg(5, height));
+	CLCall(dispKernel.setArg(6, 0));
+	CLCall(dispKernel.setArg(7, maxDisparity));
+	CLCall(dispKernel.setArg(8, windowWidth));
+	CLCall(dispKernel.setArg(9, windowHeight));
 
 	cl::Kernel dispCCKernel(crossCheckProg.GetProgram(), "CrossCheck");
 	CLCall(dispCCKernel.setArg(0, dispLRBuff));
@@ -208,39 +205,21 @@ int main() {
 	cl::CommandQueue queue(context, device, CL_QUEUE_PROFILING_ENABLE);
 
 	// Scale and gray left
-	std::cout << "Converting Left Image to grayscale...";
-	CLCall(queue.enqueueNDRangeKernel(scaleLKernel, cl::NullRange, 
+	std::cout << "Converting Images to grayscale...";
+	CLCall(queue.enqueueNDRangeKernel(scaleKernel, cl::NullRange, 
 		cl::NDRange(height, width), cl::NullRange, nullptr, &scaleLEvent));
 	scaleLEvent.wait();
 	elapsed = scaleLEvent.getProfilingInfo<CL_PROFILING_COMMAND_END>() -
 		scaleLEvent.getProfilingInfo<CL_PROFILING_COMMAND_START>();
 	std::cout << "Done (" << elapsed * 1e-9 << " s)" << std::endl;
 
-	// Scale and gray right
-	std::cout << "Converting Right Image to grayscale...";
-	CLCall(queue.enqueueNDRangeKernel(scaleRKernel, cl::NullRange, 
-		cl::NDRange(height, width), cl::NullRange, nullptr, &scaleREvent));
-	scaleREvent.wait();
-	elapsed = scaleREvent.getProfilingInfo<CL_PROFILING_COMMAND_END>() -
-		scaleREvent.getProfilingInfo<CL_PROFILING_COMMAND_START>();
-	std::cout << "Done (" << elapsed * 1e-9 << " s)" << std::endl;
-
-	// Disparity LR
-	std::cout << "Calculating Left Disparity Map...";
-	CLCall(queue.enqueueNDRangeKernel(dispLRKernel, cl::NullRange,
-		cl::NDRange(height, width), cl::NullRange, nullptr, &dispLREvent));
+	// Disparity Maps
+	std::cout << "Calculating Disparity Maps...";
+	CLCall(queue.enqueueNDRangeKernel(dispKernel, cl::NullRange,
+		cl::NDRange(height, width), cl::NDRange(2, 15), nullptr, &dispLREvent));
 	dispLREvent.wait();
 	elapsed = dispLREvent.getProfilingInfo<CL_PROFILING_COMMAND_END>() -
 		dispLREvent.getProfilingInfo<CL_PROFILING_COMMAND_START>();
-	std::cout << "Done (" << elapsed * 1e-9 << " s)" << std::endl;
-
-	// Disparity RL
-	std::cout << "Calculating Right Disparity Map...";
-	CLCall(queue.enqueueNDRangeKernel(dispRLKernel, cl::NullRange,
-		cl::NDRange(height, width), cl::NullRange, nullptr, &dispRLEvent));
-	dispRLEvent.wait();
-	elapsed = dispRLEvent.getProfilingInfo<CL_PROFILING_COMMAND_END>() -
-		dispRLEvent.getProfilingInfo<CL_PROFILING_COMMAND_START>();
 	std::cout << "Done (" << elapsed * 1e-9 << " s)" << std::endl;
 
 	// Cross Checking
